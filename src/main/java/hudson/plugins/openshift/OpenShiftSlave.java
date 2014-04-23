@@ -27,12 +27,16 @@ import java.util.logging.Logger;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.apache.commons.lang.StringEscapeUtils;
 
+import com.openshift.client.ApplicationScale;
 import com.openshift.client.IApplication;
 import com.openshift.client.IDomain;
+import com.openshift.client.IGear;
+import com.openshift.client.IGearGroup;
 import com.openshift.client.IGearProfile;
 import com.openshift.client.IOpenShiftConnection;
 import com.openshift.client.IUser;
 import com.openshift.client.OpenShiftException;
+import com.openshift.client.cartridge.ICartridge;
 import com.openshift.client.cartridge.IStandaloneCartridge;
 import com.openshift.client.cartridge.StandaloneCartridge;
 import com.openshift.client.configuration.DefaultConfiguration;
@@ -178,10 +182,31 @@ public class OpenShiftSlave extends AbstractCloudSlave {
         try {
             IUser user = OpenShiftCloud.get().getOpenShiftConnection().getUser();
             IApplication app = user.getDefaultDomain().getApplicationByName(name);
-            String url = app.getApplicationUrl();
 
-            if (url.indexOf("//") != -1)
-                url = url.substring(url.indexOf("//") + 2);
+            String url = null;
+
+            for (IGearGroup gearGroup : app.getGearGroups()) {
+                for(ICartridge cart : gearGroup.getCartridges())
+                {
+                    if(cart.getName().equals(this.builderType))
+                    {
+                        url = ((IGear) gearGroup.getGears().toArray()[0]).getSshUrl();
+                        break;
+                    }
+                }
+                if(url != null)
+                {
+                    break;
+                }
+            }
+
+            if(url == null)
+            {
+                throw new IOException("Unable to find ssh url for " + name);
+            }
+
+            if (url.indexOf("@") != -1)
+                url = url.substring(url.indexOf("@") + 1);
 
             url = url.replace("/", "");
 
@@ -283,7 +308,7 @@ public class OpenShiftSlave extends AbstractCloudSlave {
 
       LOGGER.info("Creating builder application " + cartridge.getName() + " " + name + " " + user.getDefaultDomain().getId() + " of size " + gearProfile.getName() + " ...");
 
-      IApplication app = domain.createApplication(name, cartridge, gearProfile);
+      IApplication app = domain.createApplication(name, cartridge, getApplicationFromUUID(this.applicationUUID, connection).getApplicationScale(), gearProfile);
 
       // No reason to have app running on builder gear - just need it installed
       LOGGER.info("Stopping application on builder gear ...");

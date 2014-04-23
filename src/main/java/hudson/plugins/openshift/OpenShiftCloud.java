@@ -57,6 +57,7 @@ import org.jvnet.hudson.reactor.ReactorException;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.StaplerRequest;
 
+import com.openshift.client.IDomain;
 import com.openshift.client.IApplication;
 import com.openshift.client.IOpenShiftConnection;
 import com.openshift.client.IUser;
@@ -365,11 +366,22 @@ public final class OpenShiftCloud extends Cloud {
 
                 OpenShiftApplicationUUIDJobProperty osappuidjp = ((OpenShiftApplicationUUIDJobProperty) job
                         .getProperty(OpenShiftApplicationUUIDJobProperty.class));
-                applicationUUID = osappuidjp==null?null:osappuidjp.applicationUUID;
+                applicationUUID = osappuidjp == null ? null : osappuidjp.applicationUUID;
 
-                OpenShiftBuilderTypeJobProperty osbtjp = ((OpenShiftBuilderTypeJobProperty) job
-                        .getProperty(OpenShiftBuilderTypeJobProperty.class));
-                builderType = osbtjp.builderType;
+                try {
+                    for (IDomain domain : OpenShiftCloud.get().getOpenShiftConnection().getDomains()) {
+                        for (IApplication app : domain.getApplications()) {
+                            if (app.getUUID().equals(applicationUUID)) {
+                                builderType = app.getCartridge().getName();
+                                break;
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    LOGGER.log(Level.SEVERE,
+                            "Exception caught trying to get builderType", e);
+                    cancelBuild(builderName);
+                }
 
                 OpenShiftBuilderTimeoutJobProperty timeoutJobProperty = ((OpenShiftBuilderTimeoutJobProperty) job
                         .getProperty(OpenShiftBuilderTimeoutJobProperty.class));
@@ -389,7 +401,6 @@ public final class OpenShiftCloud extends Cloud {
                             - APP_NAME_BUILDER_EXTENSION.length());
                 }
                 builderName = builderName + APP_NAME_BUILDER_EXTENSION;
-
             }
         } else {
             LOGGER.info("Cancelling build - Label is null");
